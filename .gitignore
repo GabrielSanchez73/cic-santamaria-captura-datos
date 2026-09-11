@@ -1,0 +1,61 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ---- Entornos virtuales ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- Variables de entorno y secretos ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- Bases de datos locales ----
+# El concentrador usa SQLite; el archivo de datos no se versiona.
+*.db
+*.sqlite
+*.sqlite3
+data/
+dumps/
+
+# ---- Pruebas y cobertura ----
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# ---- Herramientas de análisis ----
+.mypy_cache/
+.ruff_cache/
+
+# ---- Editores ----
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---- Sistema operativo ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- Frontend, si se agrega la capa de consulta ----
+node_modules/
+.next/
+.cache/
