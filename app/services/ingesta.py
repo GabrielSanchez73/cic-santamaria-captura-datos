@@ -1,73 +1,90 @@
+from datetime import datetime, timezone
+
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.entidades import (
-    Animal,
-    Estacion,
-    LecturaParcial,
-    SesionOrdeno,
-)
+from app.core.config import PUNTOS_ALLFLEX, PUNTOS_WAIKATO
+from app.models.entidades import Animal, Estacion, LecturaParcial, SesionOrdeno
 from app.models.enums import EstadoSesion
+
+
+class ConflictoSecuencia(Exception):
+    """La sesion ya tiene una lectura con esa secuencia bajo otro id_evento."""
+
+    def __init__(self, sesion_id: str, secuencia: int):
+        self.sesion_id = sesion_id
+        self.secuencia = secuencia
+        super().__init__(f"La sesion {sesion_id} ya tiene la secuencia {secuencia} con otro id_evento")
+
+
+def _a_utc(ts: datetime) -> datetime:
+    """Normaliza a UTC y quita la zona: SQLite no guarda el desfase, asi que se guarda siempre en UTC."""
+    return ts.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _tipo_medidor(estacion_id: str) -> str:
+    """El tipo de medidor sale de la configuracion, no de la letra de la estacion."""
+    if estacion_id in PUNTOS_WAIKATO:
+        return "WAIKATO"
+    if estacion_id in PUNTOS_ALLFLEX:
+        return "ALLFLEX"
+    return "SIN_DEFINIR"
+
+
+def _lectura_existente(db: Session, id_evento: str):
+    return db.query(LecturaParcial).filter(LecturaParcial.id_evento == id_evento).first()
 
 
 def registrar_evento(db: Session, evento):
     # Idempotencia: si el evento ya fue recibido, devolver el registro existente.
-    existente = (
-        db.query(LecturaParcial)
-        .filter(LecturaParcial.id_evento == evento.id_evento)
-        .first()
-    )
+    existente = _lectura_existente(db, evento.id_evento)
     if existente is not None:
         return existente
 
+    try:
+        lectura = _guardar(db, evento)
+        db.commit()
+        return lectura
+    except IntegrityError:
+        db.rollback()
+        # Dos envios simultaneos del mismo evento: gana el primero, el segundo lo devuelve.
+        existente = _lectura_existente(db, evento.id_evento)
+        if existente is not None:
+            return existente
+        # Misma sesion y secuencia con otro id_evento: es un conflicto, no un error del servidor.
+        raise ConflictoSecuencia(evento.sesion_id, evento.secuencia)
+
+
+def _guardar(db: Session, evento):
     # Estacion: crear si no existe.
-    estacion = (
-        db.query(Estacion)
-        .filter(Estacion.id == evento.estacion_id)
-        .first()
-    )
-    if estacion is None:
-        tipo = "ALLFLEX" if evento.estacion_id.startswith("R") else "WAIKATO"
-        estacion = Estacion(id=evento.estacion_id, tipo_medidor=tipo)
-        db.add(estacion)
+    if db.get(Estacion, evento.estacion_id) is None:
+        db.add(Estacion(id=evento.estacion_id, tipo_medidor=_tipo_medidor(evento.estacion_id)))
 
     # Animal: crear si viene identificado y no existe.
-    animal = None
-    if evento.animal_id is not None:
-        animal = (
-            db.query(Animal)
-            .filter(Animal.chapeta == evento.animal_id)
-            .first()
-        )
-        if animal is None:
-            animal = Animal(chapeta=evento.animal_id)
-            db.add(animal)
+    if evento.animal_id is not None and db.get(Animal, evento.animal_id) is None:
+        db.add(Animal(chapeta=evento.animal_id))
 
     # Sesion: crear si no existe.
-    sesion = (
-        db.query(SesionOrdeno)
-        .filter(SesionOrdeno.id == evento.sesion_id)
-        .first()
-    )
+    sesion = db.get(SesionOrdeno, evento.sesion_id)
     if sesion is None:
         sesion = SesionOrdeno(
             id=evento.sesion_id,
             estacion_id=evento.estacion_id,
             animal_chapeta=evento.animal_id,
-            ts_inicio=evento.ts_inicio,
-            ts_fin=None,
-            estado=estado_a_guardar(evento),
-            volumen_final_l=None,
-            duracion_final_s=None,
-            flujo_l_min=None,
+            ts_inicio=_a_utc(evento.ts_inicio),
+            estado=evento.estado,
         )
         db.add(sesion)
+    elif sesion.animal_chapeta is None and evento.animal_id is not None:
+        # El animal puede identificarse despues de la primera lectura.
+        sesion.animal_chapeta = evento.animal_id
 
     # Lectura parcial.
     lectura = LecturaParcial(
         id_evento=evento.id_evento,
         sesion_id=evento.sesion_id,
         secuencia=evento.secuencia,
-        ts_lectura=evento.ts_lectura,
+        ts_lectura=_a_utc(evento.ts_lectura),
         volumen_l=evento.volumen_l,
         duracion_s=evento.duracion_s,
         animal_id_origen=evento.animal_id_origen,
@@ -77,23 +94,15 @@ def registrar_evento(db: Session, evento):
     )
     db.add(lectura)
 
-    # Cierre automatico si el evento marca la sesiócompleta.
+    # Cierre automatico si el evento marca la sesion como completa.
     if evento.estado == EstadoSesion.COMPLETA:
-        sesion.ts_fin = evento.ts_lectura
+        sesion.ts_fin = _a_utc(evento.ts_lectura)
         sesion.volumen_final_l = evento.volumen_l
         sesion.duracion_final_s = evento.duracion_s
         sesion.estado = EstadoSesion.COMPLETA
         if evento.duracion_s and evento.duracion_s > 0:
-            sesion.flujo_l_min = (
-                evento.volumen_l / (evento.duracion_s / 60.0)
-            )
+            sesion.flujo_l_min = evento.volumen_l / (evento.duracion_s / 60.0)
         else:
-            sesion.flujo_l_min = None
+            sesion.flujo_l_min = None  # punto Waikato: no reporta tiempo
 
-    db.commit()
     return lectura
-
-
-def estado_a_guardar(evento):
-    """El estado inicial de la sesióes el estado del primer evento."""
-    return evento.estado

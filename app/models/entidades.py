@@ -22,7 +22,7 @@ class Estacion(Base):
     __tablename__ = "estacion"
 
     id = Column(String, primary_key=True)
-    tipo_medidor = Column(SAEnum("ALLFLEX", "WAIKATO", name="tipo_medidor_enum"), nullable=False)
+    tipo_medidor = Column(SAEnum("ALLFLEX", "WAIKATO", "SIN_DEFINIR", name="tipo_medidor_enum"), nullable=False)
 
     sesiones = relationship("SesionOrdeno", back_populates="estacion")
 
