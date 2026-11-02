@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import PUNTOS_ALLFLEX, PUNTOS_WAIKATO
 from app.models.entidades import Animal, Estacion, LecturaParcial, SesionOrdeno
-from app.models.enums import EstadoSesion
+from app.services import consolidacion
 
 
 class ConflictoSecuencia(Exception):
@@ -94,15 +94,11 @@ def _guardar(db: Session, evento):
     )
     db.add(lectura)
 
-    # Cierre automatico si el evento marca la sesion como completa.
-    if evento.estado == EstadoSesion.COMPLETA:
-        sesion.ts_fin = _a_utc(evento.ts_lectura)
-        sesion.volumen_final_l = evento.volumen_l
-        sesion.duracion_final_s = evento.duracion_s
-        sesion.estado = EstadoSesion.COMPLETA
-        if evento.duracion_s and evento.duracion_s > 0:
-            sesion.flujo_l_min = evento.volumen_l / (evento.duracion_s / 60.0)
-        else:
-            sesion.flujo_l_min = None  # punto Waikato: no reporta tiempo
+    # Se escribe ya (sin confirmar) para que la sesion "vea" todas sus lecturas, incluida la nueva, y
+    # para que una secuencia repetida falle aqui, dentro del manejo de IntegrityError.
+    db.flush()
+    db.expire(sesion, ["lecturas"])
 
+    # Consolidacion: el estado de la sesion se decide en un solo lugar.
+    consolidacion.aplicar_evento(sesion, lectura, evento.estado)
     return lectura

@@ -1,4 +1,3 @@
-from datetime import datetime
 from enum import Enum
 
 from sqlalchemy import (
@@ -14,6 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
+from app.core.tiempo import ahora_utc
 from app.db.session import Base
 from app.models.enums import AnimalIdOrigen, EstadoSesion, OrigenDato
 
@@ -71,7 +71,7 @@ class LecturaParcial(Base):
     animal_id_confianza = Column(Float, nullable=True)
     origen_dato = Column(SAEnum(OrigenDato, name="origen_dato_enum"), nullable=False)
     version_esquema = Column(String, nullable=False)
-    recibido_en = Column(DateTime, default=datetime.utcnow, nullable=False)
+    recibido_en = Column(DateTime, default=ahora_utc, nullable=False)
 
     sesion = relationship("SesionOrdeno", back_populates="lecturas")
 
