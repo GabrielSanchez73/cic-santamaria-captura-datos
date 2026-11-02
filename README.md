@@ -207,7 +207,7 @@ Plan según el cronograma de sprints del proyecto.
 | Sprint | Ventana | Objetivo | Tareas |
 |---|---|---|---|
 | S1 | 10 – 23 sep | Contrato y modelo de datos | G-01, G-05, G-02 |
-| S2 | 24 sep – 7 oct | Ingesta robusta: valida, no duplica, acepta datos incompletos | Ver cronograma |
+| S2 | 24 sep – 7 oct | Ingesta robusta: valida, no duplica, acepta datos incompletos | G-03, G-04 y G-07 |
 | S3 | 8 – 21 oct | Sesiones consolidadas, estados y persistencia | G-06, G-08, G-13 |
 | S4 | 22 oct – 1 nov | Consulta de la jornada y medición de desempeño | G-19, G-22 |
 
