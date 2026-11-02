@@ -92,22 +92,22 @@ Es la única interfaz entre el nodo de captura y esta plataforma. Versión 1.0, 
 ```
 .
 ├── app/
-│   ├── api/v1/          Endpoints HTTP. Punto de entrada de la ingesta.
-│   ├── core/            Configuración, constantes y utilidades transversales.
-│   ├── db/              Sesión de base de datos y migraciones.
+│   ├── api/v1/          Endpoints: ingesta (/v1/eventos), jornada, métricas.
+│   ├── api/vista.py     Página HTML de la jornada (/jornada).
+│   ├── core/            Configuración, manejo de zona horaria y métricas.
+│   ├── db/              Sesión de base de datos (SQLite en modo WAL).
 │   ├── models/          Entidades persistidas: sesión, lectura, animal, estación.
 │   ├── schemas/         Modelos de validación del contrato de datos.
-│   └── services/        Lógica de dominio: idempotencia, consolidación, estados.
+│   └── services/        Lógica de dominio: ingesta, consolidación, estados, jornada.
+├── deploy/              Servicio systemd para arranque automático.
 ├── docs/
-│   └── contrato/        Especificación versionada del contrato de datos.
-├── scripts/             Utilidades de desarrollo y carga de datos de prueba.
-├── tests/
-│   ├── unit/            Pruebas de servicios y validaciones.
-│   └── integration/     Pruebas de los casos de falla: corte de luz, sin señal, ID dudoso.
+│   ├── contrato/        Contrato de datos, reglas y ejemplos validados por las pruebas.
+│   └── ESP32.md         Guía de conexión segura del ESP32.
+├── firmware/            Sketch de prueba del ESP32 y su verificación en el computador.
+├── scripts/             Simulador del nodo, medición de latencia, arranque.
+├── tests/               Unitarias e integración (incluye casos de falla).
 ├── .github/workflows/   Integración continua.
-├── .gitignore
-├── requirements.txt
-└── README.md
+└── requirements.txt
 ```
 
 ### Separación por capas
@@ -116,10 +116,59 @@ El flujo de un evento atraviesa el sistema en este orden:
 
 1. `api/v1` recibe el envío del nodo de captura.
 2. `schemas` valida el contrato y rechaza lo malformado con detalle del error.
-3. `services` aplica idempotencia, consolida las lecturas parciales de la sesión y decide el estado del registro.
-4. `models` y `db` persisten el resultado.
+3. `services/ingesta` aplica idempotencia y guarda la lectura; `services/consolidacion` decide el estado de la sesión.
+4. `models` y `db` persisten el resultado; `services/jornada` lo presenta.
 
 La lógica de dominio vive en `services` y no depende de la capa HTTP, de modo que sea verificable sin levantar el servidor.
+
+### Reglas de consolidación y estados
+
+- `volumen_l` es el volumen **acumulado**; el de la sesión es el de la lectura con mayor `secuencia`. Nunca se suman lecturas.
+- Precedencia de estados: `COMPLETA` > `ESTIMADA` > `INCONCLUSA` > `EN_CURSO`.
+- Una sesión sin lectura final y sin lecturas nuevas durante `SESION_TIMEOUT_SEG` pasa a `INCONCLUSA`. Se mide con la hora de **recepción** en el concentrador, no con el reloj del nodo.
+- `INCONCLUSA` es reversible: si llegan las lecturas que el nodo guardó durante un corte, la sesión se reabre o se completa.
+- Una sesión `INCONCLUSA` nunca se suma como producción completa: su volumen se informa aparte como **mínimo**.
+- Sin duración (puntos Waikato) no se calcula flujo.
+- Al arrancar, el concentrador revisa de inmediato las sesiones que quedaron abiertas (por ejemplo tras un corte de energía).
+
+---
+
+## Arranque
+
+Requisitos: Python 3.13.
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate        # Windows  (Linux/Mac: source .venv/bin/activate)
+pip install -r requirements.txt
+python -m pytest -q
+scripts\iniciar_concentrador.bat   # Linux/Mac: ./scripts/iniciar_concentrador.sh
+```
+
+Escucha en `0.0.0.0:8000` para que otros dispositivos de la red local (el ESP32) lleguen a él. Configuración opcional en `.env` (ver `.env.example`). En Linux, `deploy/concentrador.service` lo deja arrancando solo al encender el equipo.
+
+| Ruta | Para qué |
+|---|---|
+| `POST /v1/eventos` | Ingesta de un evento del contrato. |
+| `GET /v1/jornada?fecha=AAAA-MM-DD` | Sesiones del día, agrupadas por estado, con totales. |
+| `GET /v1/sesiones/{sesion_id}` | Una sesión con todas sus lecturas. |
+| `GET /jornada` | La jornada en una página web (se actualiza sola). |
+| `GET/DELETE /v1/metricas` | Tiempos de respuesta del servidor (percentiles) y su reinicio. |
+| `GET /health` | Estado del servicio y de la base de datos. |
+| `GET /docs` | Documentación interactiva de la API. |
+
+## Probar sin hardware
+
+```bash
+python scripts/simular_nodo.py --escenario completo     # emula al ESP32 por HTTP real
+python scripts/medir_latencia.py --ingestas 200 --consultas 100
+```
+
+`medir_latencia.py` escribe eventos de prueba: úsalo con una base aparte (`DATABASE_URL=sqlite:///./medicion.db`). Las cifras que entregue dependen del equipo y de la red; para un resultado del proyecto hay que medirlas en el concentrador real y en la red de la sala.
+
+## Conectar el ESP32
+
+Ver [`docs/ESP32.md`](docs/ESP32.md): orden de pasos, riesgos de hardware y solución de problemas. El sketch envía datos simulados y no usa ningún pin externo.
 
 ---
 
@@ -143,34 +192,28 @@ Cada rama de trabajo sale de `develop` y regresa a `develop` mediante pull reque
 
 | Capa | Tecnología |
 |---|---|
-| API | Python con FastAPI |
-| Persistencia local | SQLite en el concentrador |
-| Persistencia centralizada | PostgreSQL |
-| Empaquetado | Docker |
+| API | Python con FastAPI y Pydantic v2 |
+| Persistencia local | SQLite (modo WAL, `synchronous=FULL`) vía SQLAlchemy |
+| Pruebas | pytest y httpx |
 
-La ejecución en contenedor permite desarrollar y probar sin depender de la llegada del hardware.
+Previsto y **aún no incluido**: persistencia centralizada en PostgreSQL y empaquetado en Docker.
 
 ---
 
 ## Estado del proyecto
 
-**Sprint 1 — del 10 al 23 de septiembre de 2026.** Demostración el jueves 24.
+Plan según el cronograma de sprints del proyecto.
 
-| Tarea | Descripción | Estado |
-|---|---|---|
-| G-01 | Contrato de datos acordado y publicado | Cerrado |
-| G-05 | Modelo de datos: sesión, lectura parcial, animal, estación | En curso |
-| G-02 | Endpoint `POST /v1/eventos` en el concentrador | Pendiente |
+| Sprint | Ventana | Objetivo | Tareas |
+|---|---|---|---|
+| S1 | 10 – 23 sep | Contrato y modelo de datos | G-01, G-05, G-02 |
+| S2 | 24 sep – 7 oct | Ingesta robusta: valida, no duplica, acepta datos incompletos | Ver cronograma |
+| S3 | 8 – 21 oct | Sesiones consolidadas, estados y persistencia | G-06, G-08, G-13 |
+| S4 | 22 oct – 1 nov | Consulta de la jornada y medición de desempeño | G-19, G-22 |
 
-Criterio de cierre del sprint: un evento JSON enviado con `curl` queda almacenado en la base local.
+El código de las tareas G-06, G-08, G-13, G-19 y G-22 está en la rama `feature/sprints-3-4-definitiva`.
 
-### Sprints siguientes
-
-| Sprint | Ventana | Objetivo |
-|---|---|---|
-| S2 | 24 sep – 7 oct | Ingesta robusta: valida, no duplica, acepta datos incompletos |
-| S3 | 8 oct – 21 oct | Concentrador montado y sesiones consolidadas |
-| S4 | 22 oct – 1 nov | Consulta de la jornada y medición de desempeño |
+Pendiente: validar con el nodo de captura real, medir el desempeño en la red de la sala (G-22 se mide con `scripts/medir_latencia.py`) y las tareas de los sprints posteriores (mapa real de medidores, corrección de animal, exportación, entre otras).
 
 ---
 

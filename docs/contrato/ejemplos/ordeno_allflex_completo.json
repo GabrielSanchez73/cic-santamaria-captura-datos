@@ -1,0 +1,5 @@
+[
+  {"id_evento":"0b7e6d4a-1c52-4f0e-9a37-5d1c2b8e6f01","version_esquema":"1.0","estacion_id":"R1","sesion_id":"SES-20261031-R1-004","animal_id":"2101","animal_id_origen":"RFID","animal_id_confianza":0.98,"ts_inicio":"2026-10-31T05:12:00-05:00","ts_lectura":"2026-10-31T05:14:00-05:00","secuencia":1,"volumen_l":2.1,"duracion_s":120,"flujo_l_min":null,"estado":"EN_CURSO","origen_dato":"OCR"},
+  {"id_evento":"5c1f9a22-7d34-4b8a-8e10-3a6d9c0b4e02","version_esquema":"1.0","estacion_id":"R1","sesion_id":"SES-20261031-R1-004","animal_id":"2101","animal_id_origen":"RFID","animal_id_confianza":0.98,"ts_inicio":"2026-10-31T05:12:00-05:00","ts_lectura":"2026-10-31T05:16:00-05:00","secuencia":2,"volumen_l":4.3,"duracion_s":240,"flujo_l_min":null,"estado":"EN_CURSO","origen_dato":"OCR"},
+  {"id_evento":"a9d3e8f0-2b61-4c7d-b5a4-6e0f1d2c3b03","version_esquema":"1.0","estacion_id":"R1","sesion_id":"SES-20261031-R1-004","animal_id":"2101","animal_id_origen":"RFID","animal_id_confianza":0.98,"ts_inicio":"2026-10-31T05:12:00-05:00","ts_lectura":"2026-10-31T05:17:30-05:00","secuencia":3,"volumen_l":5.7,"duracion_s":330,"flujo_l_min":null,"estado":"COMPLETA","origen_dato":"OCR"}
+]

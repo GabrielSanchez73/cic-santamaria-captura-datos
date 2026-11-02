@@ -24,6 +24,8 @@ ENV/
 # ---- Bases de datos locales ----
 # El concentrador usa SQLite; el archivo de datos no se versiona.
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 data/
@@ -59,3 +61,9 @@ logs/
 node_modules/
 .next/
 .cache/
+
+# ---- Firmware: credenciales de Wi-Fi ----
+firmware/**/secrets.h
+
+# ---- Mediciones locales ----
+latencia*.csv
